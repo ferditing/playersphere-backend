@@ -4,17 +4,21 @@ from flask_cors import CORS
 from app.extensions.db import db
 from app.extensions.migrate import migrate
 from app import models
+import os
 
 def create_app():
     app = Flask(__name__)
 
-    # Load .env into environment early so services can read credentials
     dotenv_path = find_dotenv()
     if dotenv_path:
-        # override=True ensures values from .env replace empty or missing env vars
         load_dotenv(dotenv_path, override=True)
 
-    app.config.from_object("app.config.Config")
+    # 2. FIX: Check if we are on Render, otherwise use Development
+    # Render automatically sets an environment variable called 'RENDER'
+    if os.environ.get("RENDER"):
+        app.config.from_object("app.config.ProductionConfig")
+    else:
+        app.config.from_object("app.config.DevelopmentConfig")
 
     # Enable CORS for development with comprehensive settings
     CORS(

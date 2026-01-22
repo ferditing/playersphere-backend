@@ -1,0 +1,90 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.pytest_cache/
+
+# Flask instance folder
+instance/
+.webassets-cache
+
+# Virtual environments
+env/
+venv/
+ENV/
+.envs/
+.venv/
+venv.bak/
+
+# dotenv and environment files (do not commit secrets)
+.env
+.env.*
+
+# Database
+*.db
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Editors and IDEs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Python bytecode cache (pycache already included)
+__pycache__/
+
+# Ignore compiled C extensions
+*.so
+
+# Avoid ignoring migrations (keep under version control)
+# If you need to ignore local migration artifacts, add them explicitly
+
+# Keep an example env file in repo if present
+!.env.example

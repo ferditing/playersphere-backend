@@ -28,7 +28,8 @@ def create_app():
             "http://localhost:3000", 
             "http://127.0.0.1:8080", 
             "http://127.0.0.1:3000", 
-            "http://10.50.178.172:8080/"
+            "http://10.50.178.172:8080/",
+            "https://playersphere-6ee65.web.app"
         ], 
         supports_credentials=True, 
         allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"], 

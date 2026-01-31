@@ -56,7 +56,12 @@ def feeds():
 
 @bp.get("/teams")
 def public_teams():
-    teams = Team.query.all()
+    q = request.args.get('q')
+    if q:
+        # case-insensitive name search
+        teams = Team.query.filter(Team.name.ilike(f"%{q}%")).limit(20).all()
+    else:
+        teams = Team.query.all()
     return jsonify([t.to_dict() for t in teams])
 
 

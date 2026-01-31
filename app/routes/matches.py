@@ -1,11 +1,18 @@
 from flask import Blueprint, request, jsonify, abort
 from sqlalchemy.orm import joinedload
 from app.services.auth_service import get_current_coach
-from app.services.match_service import schedule_match, start_match, finish_match
+from app.services.match_service import schedule_match, start_match, finish_match, create_tournament_matches
 from app.models.match import Match
+from app.models.tournament import Tournament
 from app.extensions.db import db
 
+
 bp = Blueprint("matches", __name__, url_prefix="/matches")
+match_bp = Blueprint(
+    "tournament_matches",
+    __name__,
+    url_prefix="/tournaments/<uuid:tournament_id>/matches"
+)
 
 @bp.post("/")
 def create_match():
@@ -58,9 +65,16 @@ def get_match(match_id):
 def update_match(match_id):
     coach = get_current_coach()
     match = Match.query.get_or_404(match_id)
+    # Check if coach owns one of the teams or is the tournament creator
+    owns_home = match.home_team and str(match.home_team.coach_id) == str(coach.id)
+    owns_away = match.away_team and str(match.away_team.coach_id) == str(coach.id)
+    is_tournament_creator = False
+    if match.competition:
+        tournament = Tournament.query.get(match.competition)
+        if tournament and str(tournament.created_by) == str(coach.id):
+            is_tournament_creator = True
 
-    # Check if coach owns one of the teams
-    if str(match.home_team.coach_id) != str(coach.id) and str(match.away_team.coach_id) != str(coach.id):
+    if not (owns_home or owns_away or is_tournament_creator):
         abort(403, "You don't have permission to update this match")
 
     data = request.json
@@ -73,3 +87,34 @@ def update_match(match_id):
     from app.extensions.db import db
     db.session.commit()
     return jsonify(match.to_dict())
+
+
+@match_bp.post("")
+def create_matches(tournament_id):
+    coach = get_current_coach()
+    data = request.json
+    matches = create_tournament_matches(tournament_id, data["matches"])
+    return jsonify(matches), 201
+
+
+@match_bp.get("")
+def list_tournament_matches(tournament_id):
+    # Public listing of matches for a tournament with optional status filter
+    status = request.args.get('status')
+    from app.models.enums import MatchStatus
+
+    qry = Match.query.options(
+        joinedload(Match.home_team),
+        joinedload(Match.away_team)
+    ).filter(Match.competition == str(tournament_id))
+
+    if status:
+        if status == 'upcoming':
+            qry = qry.filter(Match.status == MatchStatus.scheduled)
+        elif status == 'live':
+            qry = qry.filter(Match.status == MatchStatus.live)
+        elif status == 'finished':
+            qry = qry.filter(Match.status == MatchStatus.finished)
+
+    matches = qry.order_by(Match.match_date.asc()).all()
+    return jsonify([m.to_dict() for m in matches])

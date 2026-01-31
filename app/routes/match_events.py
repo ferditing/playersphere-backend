@@ -4,6 +4,7 @@ from app.services.auth_service import get_current_coach
 from app.models.match_event import MatchEvent
 from app.models.match import Match
 from app.models.enums import MatchStatus
+from app.models.player_stats import PlayerStats
 
 bp = Blueprint("match_events", __name__, url_prefix="/match-events")
 
@@ -71,6 +72,27 @@ def create_match_event():
         db.session.add(match)
 
     db.session.add(event)
+
+    # Update PlayerStats immediately for this event (so public stats reflect changes)
+    if data.get("player_id"):
+        try:
+            pid = data.get("player_id")
+            ps = PlayerStats.query.filter_by(player_id=pid).first()
+            if not ps:
+                ps = PlayerStats(player_id=pid)
+                db.session.add(ps)
+
+            et = data.get("event_type")
+            if et in ("goal", "penalty_goal"):
+                ps.goals = (ps.goals or 0) + 1
+            elif et == "yellow_card":
+                ps.yellow_cards = (ps.yellow_cards or 0) + 1
+            elif et == "red_card":
+                ps.red_cards = (ps.red_cards or 0) + 1
+        except Exception as _:
+            # don't block event creation on stats update
+            pass
+
     db.session.commit()
 
     return jsonify(event.to_dict()), 201
@@ -83,6 +105,21 @@ def delete_match_event(event_id):
     # Verify coach owns the team that created the event
     if str(event.team.coach_id) != str(coach.id):
         return jsonify({"error": "You don't have permission to delete this event"}), 403
+
+    # Adjust PlayerStats to remove the effect of this event if applicable
+    if event.player_id:
+        try:
+            ps = PlayerStats.query.filter_by(player_id=event.player_id).first()
+            if ps:
+                ev = event.event_type.value if hasattr(event.event_type, 'value') else str(event.event_type)
+                if ev in ("goal", "penalty_goal") and ps.goals:
+                    ps.goals = max(0, ps.goals - 1)
+                elif ev == "yellow_card" and ps.yellow_cards:
+                    ps.yellow_cards = max(0, ps.yellow_cards - 1)
+                elif ev == "red_card" and ps.red_cards:
+                    ps.red_cards = max(0, ps.red_cards - 1)
+        except Exception:
+            pass
 
     db.session.delete(event)
     db.session.commit()

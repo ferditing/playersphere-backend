@@ -22,3 +22,19 @@ class PlayerStats(db.Model):
     shots_off_target = db.Column(db.Integer, default=0)
 
     updated_at = db.Column(db.DateTime, server_default=db.func.now())
+    
+    def to_dict(self):
+        return {
+            'id': str(self.id),
+            'player_id': str(self.player_id),
+            'season': self.season,
+            'matches_played': self.matches_played,
+            'minutes_played': self.minutes_played,
+            'goals': self.goals,
+            'assists': self.assists,
+            'yellow_cards': self.yellow_cards,
+            'red_cards': self.red_cards,
+            'shots_on_target': self.shots_on_target,
+            'shots_off_target': self.shots_off_target,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }

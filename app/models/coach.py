@@ -16,6 +16,10 @@ class Coach(db.Model):
     country = db.Column(db.Text, default="Kenya")
     region = db.Column(db.Text)
     city = db.Column(db.Text)
+    county_id = db.Column(UUID(as_uuid=True), db.ForeignKey('counties.id'), nullable=True)
+    email_verified = db.Column(db.Boolean, default=False)
+    must_change_password = db.Column(db.Boolean, default=False)
+    created_by_admin_id = db.Column(UUID(as_uuid=True), nullable=True)
 
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())

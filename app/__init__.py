@@ -68,6 +68,7 @@ def create_app():
     from app.routes.standings_routes import standings_bp
     from app.routes.stats_routes import stats_bp
     from app.routes.knockout_routes import knockout_bp
+    from app.routes.competition_routes import competition_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(teams_bp)
@@ -83,5 +84,26 @@ def create_app():
     app.register_blueprint(standings_bp)
     app.register_blueprint(stats_bp)
     app.register_blueprint(knockout_bp)
+    app.register_blueprint(competition_bp)
+
+    # Register CLI commands
+    @app.cli.command()
+    def seed_locations():
+        """Seed the database with country, region, county, and ward data."""
+        from app.services.location_service import seed_locations as seed_locations_service
+        seed_locations_service()
+
+    @app.cli.command()
+    def clear_locations():
+        """Clear all location data from the database."""
+        from app.services.location_service import clear_locations as clear_locations_service
+        if input("Are you sure? This will delete all location data. Type 'yes' to confirm: ") == 'yes':
+            clear_locations_service()
+        else:
+            print("Cancelled.")
+
+    # Register the seed constituencies/wards command
+    from app.services.seed_command import register_seed_command
+    register_seed_command(app)
 
     return app

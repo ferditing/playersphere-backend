@@ -10,10 +10,14 @@ class Match(db.Model):
 
     home_team_id = db.Column(UUID(as_uuid=True), db.ForeignKey("teams.id"), nullable=False)
     away_team_id = db.Column(UUID(as_uuid=True), db.ForeignKey("teams.id"), nullable=False)
+    
+    # Competition structure
+    competition_id = db.Column(UUID(as_uuid=True), db.ForeignKey("competitions.id"), nullable=True)
+    group_id = db.Column(UUID(as_uuid=True), db.ForeignKey("competition_groups.id"), nullable=True)
+    knockout_round_id = db.Column(UUID(as_uuid=True), db.ForeignKey("knockout_rounds.id"), nullable=True)
 
     match_date = db.Column(db.DateTime, nullable=False)
     venue = db.Column(db.Text)
-    competition = db.Column(db.Text)
 
     country = db.Column(db.Text, default="Kenya")
     region = db.Column(db.Text)
@@ -43,9 +47,11 @@ class Match(db.Model):
             'away_team_id': str(self.away_team_id),
             'home_team': self.home_team.to_dict() if self.home_team else None,
             'away_team': self.away_team.to_dict() if self.away_team else None,
+            'competition_id': str(self.competition_id) if self.competition_id else None,
+            'group_id': str(self.group_id) if self.group_id else None,
+            'knockout_round_id': str(self.knockout_round_id) if self.knockout_round_id else None,
             'match_date': self.match_date.isoformat() if self.match_date else None,
             'venue': self.venue,
-            'competition': self.competition,
             'country': self.country,
             'region': self.region,
             'city': self.city,

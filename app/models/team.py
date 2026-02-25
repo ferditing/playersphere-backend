@@ -20,6 +20,8 @@ class Team(db.Model):
     team_type = db.Column(db.Text)
     backup_email_1 = db.Column(db.Text)
     backup_email_2 = db.Column(db.Text)
+    county_id = db.Column(UUID(as_uuid=True), db.ForeignKey('counties.id'), nullable=True)
+    created_by_admin_id = db.Column(UUID(as_uuid=True), nullable=True)
 
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())

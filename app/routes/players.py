@@ -4,11 +4,14 @@ from app.services.auth_service import get_current_coach
 from app.models.player import Player
 from app.models.team import Team
 
-bp = Blueprint("players", __name__, url_prefix="/players")
+bp = Blueprint("players", __name__, url_prefix="/api/players")
 
-@bp.post("/")
+@bp.post("/", strict_slashes=False)
 def create_player():
-    coach = get_current_coach()
+    try:
+        coach = get_current_coach()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
     data = request.json
 
     team = Team.query.get_or_404(data["team_id"])
@@ -27,9 +30,12 @@ def create_player():
     return jsonify(player.to_dict()), 201
 
 
-@bp.get("/<uuid:player_id>")
+@bp.get("/<uuid:player_id>", strict_slashes=False)
 def get_player(player_id):
-    coach = get_current_coach()
+    try:
+        coach = get_current_coach()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
     player = Player.query.get_or_404(player_id)
 
     # Check if coach owns the player's team
@@ -39,9 +45,12 @@ def get_player(player_id):
     return jsonify(player.to_dict())
 
 
-@bp.put("/<uuid:player_id>")
+@bp.put("/<uuid:player_id>", strict_slashes=False)
 def update_player(player_id):
-    coach = get_current_coach()
+    try:
+        coach = get_current_coach()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
     player = Player.query.get_or_404(player_id)
 
     # Check if coach owns the player's team

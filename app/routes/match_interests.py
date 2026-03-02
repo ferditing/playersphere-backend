@@ -9,11 +9,15 @@ from app.models.match_interest import MatchInterest
 from app.models.match import Match
 from app.models.enums import MatchInterestStatus
 
-bp = Blueprint("match_interests", __name__, url_prefix="/match-interests")
+bp = Blueprint("match_interests", __name__, url_prefix="/api/match-interests")
 
-@bp.get("")
+@bp.get("", strict_slashes=False)
 def get_match_interests():
-    coach = get_current_coach()
+    try:
+        coach = get_current_coach()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
+    
     status = request.args.get('status')
     
     query = MatchInterest.query.join(
@@ -30,9 +34,13 @@ def get_match_interests():
 
     return jsonify([interest.to_dict() for interest in interests])
 
-@bp.post("")
+@bp.post("", strict_slashes=False)
 def create_match_interest():
-    coach = get_current_coach()
+    try:
+        coach = get_current_coach()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
+    
     data = request.json
 
     interest = MatchInterest(
@@ -102,9 +110,13 @@ def create_match_interest():
 
     return jsonify(interest.to_dict()), 201
 
-@bp.put("/<uuid:interest_id>/respond")
+@bp.put("/<uuid:interest_id>/respond", strict_slashes=False)
 def respond_to_interest(interest_id):
-    coach = get_current_coach()
+    try:
+        coach = get_current_coach()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
+    
     data = request.json
 
     interest = MatchInterest.query.get_or_404(interest_id)
@@ -145,10 +157,14 @@ def respond_to_interest(interest_id):
     return jsonify(interest.to_dict())
 
 
-@bp.put("/<uuid:interest_id>")
+@bp.put("/<uuid:interest_id>", strict_slashes=False)
 def update_match_interest(interest_id):
     """Allow the requesting coach or the target coach to edit the proposed date/venue/message."""
-    coach = get_current_coach()
+    try:
+        coach = get_current_coach()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
+    
     data = request.json
 
     interest = MatchInterest.query.get_or_404(interest_id)

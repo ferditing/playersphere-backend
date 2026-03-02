@@ -1,66 +1,88 @@
 from flask import Blueprint, request, jsonify
 from app.extensions.db import db
-from app.services.auth_service import get_current_coach
+from app.services.auth_service import get_current_coach, get_current_coach_or_none, get_current_user
 from app.models.team import Team
+from app.models.admin import Admin
+from app.models.coach import Coach
 
-bp = Blueprint("teams", __name__, url_prefix="/teams")
+bp = Blueprint("teams", __name__, url_prefix="/api/teams")
 
 
-@bp.post("/")
+@bp.post("/", strict_slashes=False)
 def create_team():
-    coach = get_current_coach()
-    if not coach:
-        return jsonify({"error": "Unauthorized"}), 401
+    """Create a team. Coaches create their own, admins can assign to any coach."""
+    try:
+        user = get_current_user()
+        data = request.get_json() or {}
 
-    data = request.get_json() or {}
+        if "name" not in data:
+            return jsonify({"error": "Team name is required"}), 400
 
-    if "name" not in data:
-        return jsonify({"error": "Team name is required"}), 400
+        # Determine which coach owns this team
+        if isinstance(user, Admin):
+            # Admin creating team: must specify coach_id
+            coach_id = data.get("coach_id")
+            if not coach_id:
+                return jsonify({"error": "coach_id is required for admins"}), 400
+            
+            # Verify coach exists
+            coach = Coach.query.get(coach_id)
+            if not coach:
+                return jsonify({"error": "Coach not found"}), 404
+        else:
+            # Coach creating their own team
+            coach = get_current_coach()
+            if not coach:
+                return jsonify({"error": "Unauthorized"}), 401
+            coach_id = coach.id
 
-    team = Team(
-        coach_id=coach.id,
-        name=data["name"],
-        region=data.get("region"),
-        city=data.get("city"),
-        area=data.get("area"),
-        team_type=data.get("team_type"),
-        backup_email_1=data.get("backup_email_1"),
-        backup_email_2=data.get("backup_email_2"),
-    )
+        team = Team(
+            coach_id=coach_id,
+            name=data["name"],
+            region=data.get("region"),
+            city=data.get("city"),
+            area=data.get("area"),
+            team_type=data.get("team_type"),
+            backup_email_1=data.get("backup_email_1"),
+            backup_email_2=data.get("backup_email_2"),
+        )
 
-    db.session.add(team)
-    db.session.commit()
+        db.session.add(team)
+        db.session.commit()
 
-    return jsonify(team.to_dict()), 201
-
-    coach = get_current_coach()
-    data = request.json
-
-    team = Team(
-        coach_id=coach.id,
-        name=data["name"],
-        region=data.get("region"),
-        city=data.get("city"),
-        area=data.get("area"),
-        team_type=data.get("team_type"),
-        backup_email_1=data.get("backup_email_1"),
-        backup_email_2=data.get("backup_email_2")
-    )
-    db.session.add(team)
-    db.session.commit()
-    return jsonify(team.to_dict()), 201
+        return jsonify(team.to_dict()), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
 
 
-@bp.get("/")
+@bp.get("/", strict_slashes=False)
 def my_teams():
-    coach = get_current_coach()
-    teams = Team.query.filter_by(coach_id=coach.id).all()
-    return jsonify([t.to_dict() for t in teams])
+    try:
+        # Check if it's an admin token
+        user = get_current_user()
+        if isinstance(user, Admin):
+            # Admins can see all teams (or filter by county if county_admin)
+            if user.role == 'county_admin' and user.county_id:
+                teams = Team.query.filter_by(county_id=user.county_id).all()
+            else:
+                # Super admin sees all teams
+                teams = Team.query.all()
+        else:
+            # Coaches only see their own teams
+            coach = get_current_coach()
+            teams = Team.query.filter_by(coach_id=coach.id).all()
+        
+        return jsonify([t.to_dict() for t in teams]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
 
 
-@bp.put("/<uuid:team_id>/backup-emails")
+@bp.put("/<uuid:team_id>/backup-emails", strict_slashes=False)
 def update_backup_emails(team_id):
-    coach = get_current_coach()
+    try:
+        coach = get_current_coach()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
     team = Team.query.filter_by(id=team_id, coach_id=coach.id).first()
 
     if not team:
@@ -75,9 +97,12 @@ def update_backup_emails(team_id):
     return jsonify(team.to_dict())
 
 
-@bp.get("/<uuid:team_id>/backup-email-verifications")
+@bp.get("/<uuid:team_id>/backup-email-verifications", strict_slashes=False)
 def get_backup_email_verifications(team_id):
-    coach = get_current_coach()
+    try:
+        coach = get_current_coach()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
     team = Team.query.filter_by(id=team_id, coach_id=coach.id).first()
 
     if not team:
@@ -87,9 +112,12 @@ def get_backup_email_verifications(team_id):
     return jsonify([])
 
 
-@bp.put("/<uuid:team_id>")
+@bp.put("/<uuid:team_id>", strict_slashes=False)
 def update_team(team_id):
-    coach = get_current_coach()
+    try:
+        coach = get_current_coach()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
     team = Team.query.filter_by(id=team_id, coach_id=coach.id).first()
 
     if not team:
@@ -112,9 +140,12 @@ def update_team(team_id):
     return jsonify(team.to_dict())
 
 
-@bp.delete("/<uuid:team_id>")
+@bp.delete("/<uuid:team_id>", strict_slashes=False)
 def delete_team(team_id):
-    coach = get_current_coach()
+    try:
+        coach = get_current_coach()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
     team = Team.query.filter_by(id=team_id, coach_id=coach.id).first()
 
     if not team:
@@ -125,9 +156,12 @@ def delete_team(team_id):
     return jsonify({"message": "Team deleted successfully"})
 
 
-@bp.get("/<uuid:team_id>/players")
+@bp.get("/<uuid:team_id>/players", strict_slashes=False)
 def get_team_players(team_id):
-    coach = get_current_coach()
+    try:
+        coach = get_current_coach()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
     team = Team.query.filter_by(id=team_id, coach_id=coach.id).first()
 
     if not team:

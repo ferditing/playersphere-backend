@@ -43,6 +43,7 @@ class Team(db.Model):
             'team_type': self.team_type,
             'backup_email_1': self.backup_email_1,
             'backup_email_2': self.backup_email_2,
+            'county_id': str(self.county_id) if self.county_id else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }

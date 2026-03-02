@@ -37,6 +37,9 @@ class Competition(db.Model):
     max_teams = db.Column(db.Integer, nullable=True)  # Optional limit
     min_teams = db.Column(db.Integer, default=2)
     
+    # Created by admin
+    created_by = db.Column(UUID(as_uuid=True), db.ForeignKey('admins.id'), nullable=True)
+    
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -67,6 +70,7 @@ class Competition(db.Model):
             'max_teams': self.max_teams,
             'region_id': str(self.region_id) if self.region_id else None,
             'county_id': str(self.county_id) if self.county_id else None,
+            'created_by': str(self.created_by) if self.created_by else None,
         }
 
     def __repr__(self):

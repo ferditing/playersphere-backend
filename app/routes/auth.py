@@ -1,12 +1,13 @@
 from flask import Blueprint, request, jsonify, current_app
 from werkzeug.security import generate_password_hash, check_password_hash
 from app.models.coach import Coach
+from app.models.admin import Admin
 from app.extensions.db  import db
 from app.services.otp_service import send_signup_otp, verify_signup_otp, is_email_verified_for_signup
 import jwt
 import datetime
 
-bp = Blueprint("auth", __name__, url_prefix="/auth")
+bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
 @bp.post("/login")
 def login():
@@ -16,16 +17,38 @@ def login():
     if not email or not password:
         return jsonify({"error": "Email and password are required"}), 400
     
+    # Check Admin first
+    admin = Admin.query.filter_by(email=email).first()
+    if admin and admin.check_password(password):
+        token = jwt.encode({
+            'admin_id': str(admin.id),
+            'role': admin.role,
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(days=1)
+        }, current_app.config['SECRET_KEY'], algorithm='HS256')
+
+        return jsonify({
+            "token": token,
+            "user": {
+                "id": str(admin.id),
+                "email": admin.email,
+                "full_name": admin.full_name,
+                "role": admin.role,
+                "type": "admin"
+            }
+        })
+    
+    # Check Coach if Admin not found
     coach = Coach.query.filter_by(email=email).first()
-    if not coach or not coach.check_password(password):
-        return jsonify({"error": "Invalid credentials"}), 401
+    if coach and coach.check_password(password):
+        token = jwt.encode({
+            'coach_id': str(coach.id),
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(days=1)
+        }, current_app.config['SECRET_KEY'], algorithm='HS256')
 
-    token = jwt.encode({
-        'coach_id': str(coach.id),
-        'exp': datetime.datetime.utcnow() + datetime.timedelta(days=1)
-    }, current_app.config['SECRET_KEY'], algorithm='HS256')
-
-    return jsonify({"token": token, "user": coach.to_dict()})
+        return jsonify({"token": token, "user": coach.to_dict()})
+    
+    # Neither admin nor coach found
+    return jsonify({"error": "Invalid credentials"}), 401
 
 @bp.post("/signup")
 def signup():
@@ -64,9 +87,21 @@ def signup():
 
 @bp.get("/me")
 def me():
-    from app.services.auth_service import get_current_coach
-    coach = get_current_coach()
-    return jsonify(coach.to_dict())
+    from app.services.auth_service import get_current_user
+    user = get_current_user()
+    
+    # Admin response format
+    if isinstance(user, Admin):
+        return jsonify({
+            "id": str(user.id),
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": user.role,
+            "type": "admin"
+        })
+    
+    # Coach response format
+    return jsonify(user.to_dict())
 
 
 @bp.post("/send-otp")

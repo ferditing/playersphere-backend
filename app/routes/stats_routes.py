@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify
 from app.services.player_stats_service import PlayerStatsService
 
-stats_bp = Blueprint("stats", __name__, url_prefix="/tournaments")
+stats_bp = Blueprint("stats", __name__, url_prefix="/api/tournaments")
 
 
 @stats_bp.get("/<uuid:tournament_id>/stats/top-scorers")

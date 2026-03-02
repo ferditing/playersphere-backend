@@ -3,7 +3,7 @@ from app.extensions.db import db
 from app.services.auth_service import get_current_coach
 from app.models.message import Message
 
-bp = Blueprint("messages", __name__, url_prefix="/messages")
+bp = Blueprint("messages", __name__, url_prefix="/api/messages")
 
 @bp.get("/")
 def get_messages():

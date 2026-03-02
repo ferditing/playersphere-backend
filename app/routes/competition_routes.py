@@ -3,6 +3,7 @@ from app.models import Competition, CompetitionTeam, Team
 from app.services.competition_service import CompetitionService
 from app.services.scheduling_service import SchedulingService
 from app.services.advancement_service import AdvancementService
+from app.services.auth_service import get_current_user
 from app.extensions.db import db
 from functools import wraps
 import uuid
@@ -37,15 +38,41 @@ def require_admin(f):
 def create_competition():
     """Create a new competition"""
     try:
+        # Log request headers
+        auth_header = request.headers.get('Authorization')
+        print(f"DEBUG: Authorization header present: {bool(auth_header)}")
+        if auth_header:
+            print(f"DEBUG: Auth header value: {auth_header[:20]}..." if len(auth_header) > 20 else f"DEBUG: Auth header value: {auth_header}")
+        
+        # Get current admin
+        admin_id = None
+        try:
+            user = get_current_user()
+            admin_id = user.id if hasattr(user, 'id') else None
+            print(f"DEBUG: Auth successful, admin_id={admin_id}, user type={type(user).__name__}")
+        except Exception as auth_err:
+            print(f"DEBUG: Auth failed with error: {auth_err}")
+            admin_id = None
+        
         data = request.get_json()
+        print(f"DEBUG: Creating competition with created_by={admin_id}")
         
         # Validate required fields
         required = ['season_id', 'name', 'stage_level', 'format_type']
         if not all(k in data for k in required):
             return jsonify({'error': 'Missing required fields'}), 400
         
+        # Handle season_id - convert string/year to UUID if needed
+        season_str = data['season_id']
+        if isinstance(season_str, str) and '-' not in season_str:
+            # If it's a year string like "2026", generate a deterministic UUID
+            season_id = uuid.uuid5(uuid.NAMESPACE_DNS, f"season-{season_str}")
+        else:
+            # Otherwise treat it as a UUID string
+            season_id = uuid.UUID(season_str)
+        
         competition = CompetitionService.create_competition(
-            season_id=uuid.UUID(data['season_id']),
+            season_id=season_id,
             name=data['name'],
             stage_level=data['stage_level'],
             format_type=data.get('format_type', 'knockout'),
@@ -57,11 +84,16 @@ def create_competition():
             county_id=uuid.UUID(data['county_id']) if data.get('county_id') else None,
             max_teams=data.get('max_teams'),
             min_teams=data.get('min_teams', 2),
+            created_by=admin_id,
         )
         
+        print(f"DEBUG: Competition created with id={competition.id}, created_by={competition.created_by}")
         return jsonify(competition.to_dict()), 201
     
     except Exception as e:
+        print(f"DEBUG: Exception in create_competition: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
@@ -74,11 +106,21 @@ def get_competitions():
         stage_level = request.args.get('stage_level')
         status = request.args.get('status')
         
+        # If season_id not provided, use current year
         if not season_id:
-            return jsonify({'error': 'season_id parameter required'}), 400
+            from datetime import datetime
+            season_id = str(datetime.utcnow().year)
+        
+        # Handle season_id - convert string/year to UUID if needed
+        if isinstance(season_id, str) and '-' not in season_id:
+            # If it's a year string like "2026", generate a deterministic UUID
+            season_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, f"season-{season_id}")
+        else:
+            # Otherwise treat it as a UUID string
+            season_uuid = uuid.UUID(season_id)
         
         competitions = CompetitionService.get_competitions_by_season(
-            uuid.UUID(season_id),
+            season_uuid,
             stage_level=stage_level
         )
         

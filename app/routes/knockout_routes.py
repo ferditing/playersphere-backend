@@ -4,7 +4,7 @@ from app.services.match_service import generate_round_robin
 from app.models.tournament_team import TournamentTeam
 from app.models.tournament import Tournament
 
-knockout_bp = Blueprint("knockout", __name__, url_prefix="/tournaments")
+knockout_bp = Blueprint("knockout", __name__, url_prefix="/api/tournaments")
 
 
 @knockout_bp.post("/<uuid:tournament_id>/qualify")

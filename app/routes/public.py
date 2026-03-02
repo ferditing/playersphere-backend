@@ -4,15 +4,23 @@ from app.models.team_stats import TeamStats
 from app.models.player_stats import PlayerStats
 from app.models.player import Player
 from app.models.team import Team
+from app.models.county import County
 from app.services.age_group_service import player_age_group
 from app.services.match_service import compute_score
 
-bp = Blueprint("public", __name__, url_prefix="/public")
+bp = Blueprint("public", __name__, url_prefix="/api/public")
 
 
 @bp.route("/test-cors", methods=["GET", "OPTIONS"])
 def test_cors():
     return jsonify({"message": "CORS is working!", "status": "success"})
+
+
+@bp.get("/counties")
+def public_counties():
+    """Get all counties with their IDs"""
+    counties = County.query.all()
+    return jsonify([{"id": str(c.id), "name": c.name} for c in counties])
 
 
 @bp.get("/feeds")
@@ -118,3 +126,31 @@ def public_team_players(team_id):
         }
         for p in players
     ])
+
+
+@bp.get("/admin-competitions", strict_slashes=False)
+def public_admin_competitions():
+    """Get all admin-created competitions (public view)"""
+    try:
+        from app.models.competition import Competition
+        
+        status_filter = request.args.get('status')
+        stage_filter = request.args.get('stage_level')
+        
+        query = Competition.query.filter(Competition.created_by.isnot(None))
+        
+        if status_filter:
+            query = query.filter(Competition.status == status_filter)
+        # Note: We now show ALL competitions (including draft) for admin-created ones
+        # They can be filtered by status param if needed
+        
+        if stage_filter:
+            query = query.filter(Competition.stage_level == stage_filter)
+        
+        competitions = query.order_by(Competition.created_at.desc()).all()
+        return jsonify([c.to_dict() for c in competitions]), 200
+    except Exception as e:
+        import traceback
+        print(f"Error fetching admin competitions: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500

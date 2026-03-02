@@ -5,7 +5,7 @@ from app.services.auth_service import get_current_coach
 from app.models.tournament import Tournament
 from flask import current_app
 
-tournament_bp = Blueprint("tournaments", __name__, url_prefix="/tournaments")
+tournament_bp = Blueprint("tournaments", __name__, url_prefix="/api/tournaments")
 
 
 @tournament_bp.post("")

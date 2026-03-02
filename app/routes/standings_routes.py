@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify
 from app.services.standings_service import StandingsService
 from app.services.live_updates_service import LiveUpdatesService
 
-standings_bp = Blueprint("standings", __name__, url_prefix="/tournaments")
+standings_bp = Blueprint("standings", __name__, url_prefix="/api/tournaments")
 
 
 @standings_bp.get("/<uuid:tournament_id>/standings")

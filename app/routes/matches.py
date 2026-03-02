@@ -7,31 +7,40 @@ from app.models.tournament import Tournament
 from app.extensions.db import db
 
 
-bp = Blueprint("matches", __name__, url_prefix="/matches")
+bp = Blueprint("matches", __name__, url_prefix="/api/matches")
 match_bp = Blueprint(
     "tournament_matches",
     __name__,
-    url_prefix="/tournaments/<uuid:tournament_id>/matches"
+    url_prefix="/api/tournaments/<uuid:tournament_id>/matches"
 )
 
-@bp.post("/")
+@bp.post("/", strict_slashes=False)
 def create_match():
-    coach = get_current_coach()
+    try:
+        coach = get_current_coach()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
     match = schedule_match(request.json, coach.id)
     return jsonify(match.to_dict()), 201
 
 
-@bp.patch("/<uuid:match_id>/start")
+@bp.patch("/<uuid:match_id>/start", strict_slashes=False)
 def start(match_id):
-    get_current_coach()
+    try:
+        get_current_coach()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
     match = Match.query.get_or_404(match_id)
     return jsonify(start_match(match).to_dict())
 
 
-@bp.patch("/<uuid:match_id>/finish")
+@bp.patch("/<uuid:match_id>/finish", strict_slashes=False)
 def finish(match_id):
     print(f"Finish match route called for match_id: {match_id}")
-    get_current_coach()
+    try:
+        get_current_coach()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
     match = Match.query.get_or_404(match_id)
     print(f"Found match {match_id} with status: {match.status}")
     try:

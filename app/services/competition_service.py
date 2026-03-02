@@ -13,7 +13,7 @@ class CompetitionService:
     @staticmethod
     def create_competition(season_id, name, stage_level, format_type='knockout', 
                          legs=1, points_win=3, points_draw=1, points_loss=0,
-                         region_id=None, county_id=None, max_teams=None, min_teams=2):
+                         region_id=None, county_id=None, max_teams=None, min_teams=2, created_by=None):
         """Create a new competition with specified configuration"""
         competition = Competition(
             season_id=season_id,
@@ -28,6 +28,7 @@ class CompetitionService:
             county_id=county_id,
             max_teams=max_teams,
             min_teams=min_teams,
+            created_by=created_by,
             status='draft'
         )
         db.session.add(competition)

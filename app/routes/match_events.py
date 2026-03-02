@@ -6,7 +6,7 @@ from app.models.match import Match
 from app.models.enums import MatchStatus
 from app.models.player_stats import PlayerStats
 
-bp = Blueprint("match_events", __name__, url_prefix="/match-events")
+bp = Blueprint("match_events", __name__, url_prefix="/api/match-events")
 
 @bp.get("/<uuid:match_id>")
 def get_match_events(match_id):

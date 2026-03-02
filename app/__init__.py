@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, request, Response
 from dotenv import load_dotenv, find_dotenv
 from flask_cors import CORS
 from app.extensions.db import db
@@ -25,28 +25,40 @@ def create_app():
         app, 
         origins=[
             "http://localhost:8080", 
-            "http://localhost:5173",
             "http://localhost:3000", 
             "http://127.0.0.1:8080", 
             "http://127.0.0.1:3000", 
-            "http://10.50.178.172:8080/",
+            "http://10.50.178.172:8080",
             "https://playersphere-6ee65.web.app"
         ], 
         supports_credentials=True, 
         allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"], 
-        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"], 
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+        max_age=3600,
         expose_headers=["Content-Type", "Authorization"]
     )
 
     # Fallback: ensure dev responses have CORS headers even on errors
     if not os.environ.get("RENDER"):
+        @app.before_request
+        def handle_preflight():
+            """Handle CORS preflight requests"""
+            if request.method == "OPTIONS":
+                response = Response("", 204)
+                response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', 'http://localhost:8080')
+                response.headers['Access-Control-Allow-Credentials'] = 'true'
+                response.headers['Access-Control-Allow-Methods'] = 'GET,POST,PUT,DELETE,OPTIONS,PATCH'
+                response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,X-Requested-With,Accept,Origin'
+                response.headers['Access-Control-Max-Age'] = '3600'
+                return response
+        
         @app.after_request
         def _ensure_cors_headers(response):
             origin = response.headers.get('Access-Control-Allow-Origin')
             if not origin:
-                response.headers['Access-Control-Allow-Origin'] = 'http://localhost:8080'
+                response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', 'http://localhost:8080')
                 response.headers['Access-Control-Allow-Credentials'] = 'true'
-                response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,Origin'
+                response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,X-Requested-With,Accept,Origin'
                 response.headers['Access-Control-Allow-Methods'] = 'GET,POST,PUT,DELETE,OPTIONS,PATCH'
             return response
 
@@ -69,6 +81,7 @@ def create_app():
     from app.routes.stats_routes import stats_bp
     from app.routes.knockout_routes import knockout_bp
     from app.routes.competition_routes import competition_bp
+    from app.routes.admin_routes import bp as admin_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(teams_bp)
@@ -85,6 +98,7 @@ def create_app():
     app.register_blueprint(stats_bp)
     app.register_blueprint(knockout_bp)
     app.register_blueprint(competition_bp)
+    app.register_blueprint(admin_bp)
 
     # Register CLI commands
     @app.cli.command()
@@ -105,5 +119,9 @@ def create_app():
     # Register the seed constituencies/wards command
     from app.services.seed_command import register_seed_command
     register_seed_command(app)
+
+    # Register the seed admin command
+    from app.services.seed_admin import register_seed_admin_command
+    register_seed_admin_command(app)
 
     return app

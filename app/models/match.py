@@ -59,8 +59,9 @@ class Match(db.Model):
             'home_score': self.home_score,
             'away_score': self.away_score,
             'current_minute': self.current_minute,
-            'started_at': self.started_at.isoformat() if self.started_at else None,
-            'ended_at': self.ended_at.isoformat() if self.ended_at else None,
+            # ensure datetime strings include a timezone indicator (UTC)
+            'started_at': (self.started_at.isoformat() + 'Z') if self.started_at and self.started_at.tzinfo is None else (self.started_at.isoformat() if self.started_at else None),
+            'ended_at': (self.ended_at.isoformat() + 'Z') if self.ended_at and self.ended_at.tzinfo is None else (self.ended_at.isoformat() if self.ended_at else None),
             'created_by': str(self.created_by) if self.created_by else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,

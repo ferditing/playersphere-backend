@@ -3,6 +3,9 @@ from app.extensions.db import db
 from app.services.auth_service import get_current_coach, get_current_user
 from app.models.coach import Coach
 from app.models.admin import Admin
+from app.models.match_interest import MatchInterest
+from app.models.message import Message
+from app.models.tournament import Tournament
 
 bp = Blueprint("coaches", __name__, url_prefix="/api/coaches")
 
@@ -84,9 +87,15 @@ def delete_coach(coach_id):
         if not coach:
             return jsonify({"error": "Coach not found"}), 404
 
-        # Prevent deleting coach with existing teams
-        if coach.teams:
-            return jsonify({"error": "Cannot delete coach with assigned teams"}), 400
+        # Prevent deleting coach who created tournaments (too important to lose)
+        if Tournament.query.filter_by(created_by=coach_id).first():
+            return jsonify({"error": "Cannot delete coach who created tournaments"}), 400
+
+        # Delete all match interests sent by this coach
+        MatchInterest.query.filter_by(requesting_coach_id=coach_id).delete()
+
+        # Delete all messages sent or received by this coach
+        Message.query.filter((Message.sender_id == coach_id) | (Message.recipient_id == coach_id)).delete()
 
         db.session.delete(coach)
         db.session.commit()

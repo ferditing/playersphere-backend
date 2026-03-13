@@ -79,44 +79,40 @@ class SchedulingService:
         matches = []
         match_date = start_date
         
-        # Generate preliminary rounds if needed (for large numbers of teams)
-        remaining_teams = team_ids
-        round_order = 1
+        # Only generate the first round initially
+        round_name = rounds[0] if rounds else "First Round"
         
-        for round_name in rounds:
-            # Create the knockout round
-            ko_round = KnockoutRound(
+        # Create the knockout round
+        ko_round = KnockoutRound(
+            competition_id=competition_id,
+            round_name=round_name,
+            round_order=1,
+            matches_per_pairing=competition.legs,
+            status='active'  # Mark as active for current play
+        )
+        db.session.add(ko_round)
+        db.session.flush()  # Get the ID
+        
+        # Pair teams in this round
+        pairings = [(remaining_teams[i], remaining_teams[i+1]) 
+                   for i in range(0, len(remaining_teams) - 1, 2)]
+        
+        for home_id, away_id in pairings:
+            match = Match(
+                home_team_id=home_id,
+                away_team_id=away_id,
                 competition_id=competition_id,
-                round_name=round_name,
-                round_order=round_order,
-                matches_per_pairing=competition.legs,
-                status='pending'
+                knockout_round_id=ko_round.id,
+                match_date=match_date,
+                status=MatchStatus.scheduled,
+                country='Kenya'
             )
-            db.session.add(ko_round)
-            db.session.flush()  # Get the ID
-            
-            # Pair teams in this round
-            pairings = [(remaining_teams[i], remaining_teams[i+1]) 
-                       for i in range(0, len(remaining_teams), 2)]
-            
-            for home_id, away_id in pairings:
-                match = Match(
-                    home_team_id=home_id,
-                    away_team_id=away_id,
-                    competition_id=competition_id,
-                    knockout_round_id=ko_round.id,
-                    match_date=match_date,
-                    status=MatchStatus.scheduled,
-                    country='Kenya'
-                )
-                db.session.add(match)
-                matches.append(match)
-            
-            # For next round, we'd have half the teams (winners only)
-            # This is a template - actual advancement happens after matches
-            remaining_teams = [remaining_teams[i] for i in range(0, len(remaining_teams), 2)]
+            db.session.add(match)
+            matches.append(match)
             match_date += timedelta(days=days_between_rounds)
-            round_order += 1
+        
+        # Note: Subsequent rounds will be generated after this round's results are posted
+        # The remaining teams logic is not used here since we only do first round
         
         db.session.commit()
         return matches
@@ -188,15 +184,15 @@ class SchedulingService:
                 matches.append(match)
                 match_date += timedelta(days=days_between_matches)
         
-        # After group stage, create knockout round structure (but don't pair yet)
-        ko_round = KnockoutRound(
-            competition_id=competition_id,
-            round_name="Knockout",
-            round_order=num_groups + 1,
-            matches_per_pairing=competition.legs,
-            status='pending'
-        )
-        db.session.add(ko_round)
+        # After group stage, knockout fixtures will be generated separately
+        # ko_round = KnockoutRound(
+        #     competition_id=competition_id,
+        #     round_name="Knockout",
+        #     round_order=num_groups + 1,
+        #     matches_per_pairing=competition.legs,
+        #     status='pending'
+        # )
+        # db.session.add(ko_round)
         
         db.session.commit()
         return matches
@@ -271,16 +267,114 @@ class SchedulingService:
         return matches
 
     @staticmethod
-    def get_schedule(competition_id, group_id=None, knockout_round_id=None):
-        """Get schedule/fixtures for a competition, optionally filtered by group or round"""
-        query = Match.query.filter_by(competition_id=competition_id)
+    def generate_knockout_from_teams(competition_id, team_ids, start_date=None, days_between_rounds=14):
+        """Generate knockout bracket from a list of qualified team_ids"""
+        competition = Competition.query.get(competition_id)
+        if not competition:
+            raise ValueError(f"Competition {competition_id} not found")
         
-        if group_id:
-            query = query.filter_by(group_id=group_id)
+        if len(team_ids) < 2:
+            raise ValueError("Need at least 2 teams for knockout")
         
-        if knockout_round_id:
-            query = query.filter_by(knockout_round_id=knockout_round_id)
+        if start_date is None:
+            start_date = datetime.utcnow()
         
-        matches = query.order_by(Match.match_date).all()
+        # Sort teams by seeded position or name for seeding
+        comp_teams = CompetitionTeam.query.filter(
+            CompetitionTeam.competition_id == competition_id,
+            CompetitionTeam.team_id.in_(team_ids)
+        ).all()
         
-        return [match.to_dict() for match in matches]
+        # Sort by seeded_position, then by team name
+        comp_teams.sort(key=lambda ct: (ct.seeded_position or 999, ct.team.name if ct.team else ''))
+        sorted_team_ids = [ct.team_id for ct in comp_teams]
+        
+        # Determine bracket structure
+        num_teams = len(sorted_team_ids)
+        rounds = SchedulingService._determine_knockout_rounds(num_teams)
+        
+        matches = []
+        match_date = start_date
+        
+        # Assign teams to bracket positions
+        bracket_positions = SchedulingService._assign_bracket_positions(sorted_team_ids)
+        
+        round_order = 1
+        
+        for round_name in rounds:
+            # Create the knockout round
+            ko_round = KnockoutRound(
+                competition_id=competition_id,
+                round_name=round_name,
+                round_order=round_order,
+                matches_per_pairing=competition.legs,
+                status='pending'
+            )
+            db.session.add(ko_round)
+            db.session.flush()
+            
+            # Get teams for this round
+            round_teams = bracket_positions.get(round_name, [])
+            
+            # Pair teams
+            round_matches = []
+            for i in range(0, len(round_teams) - 1, 2):
+                home_id = round_teams[i]
+                away_id = round_teams[i+1]
+                match = Match(
+                    home_team_id=home_id,
+                    away_team_id=away_id,
+                    competition_id=competition_id,
+                    knockout_round_id=ko_round.id,
+                    match_date=match_date,
+                    status=MatchStatus.scheduled,
+                    country='Kenya'
+                )
+                db.session.add(match)
+                matches.append(match)
+                round_matches.append(match)
+                match_date += timedelta(days=days_between_rounds)
+            
+            # For next round, winners will be assigned later
+            # For now, prepare positions for next round
+            if round_matches:
+                next_round_name = rounds[rounds.index(round_name) + 1] if rounds.index(round_name) + 1 < len(rounds) else None
+                if next_round_name:
+                    # Placeholder for winners
+                    bracket_positions[next_round_name] = [None] * (len(round_matches) // 2 * 2)
+            
+            round_order += 1
+        
+        db.session.commit()
+        return matches
+
+    @staticmethod
+    def _assign_bracket_positions(team_ids):
+        """Assign teams to bracket positions for UEFA-style seeding"""
+        positions = {}
+        num_teams = len(team_ids)
+        
+        # Determine the starting round based on number of teams
+        if num_teams == 16:
+            # Round of 16: seed 1 vs 16, 2 vs 15, etc.
+            round_teams = []
+            for i in range(8):
+                round_teams.extend([team_ids[i], team_ids[15-i]])
+            positions['Round of 16'] = round_teams
+        elif num_teams == 8:
+            # Quarter-Finals
+            round_teams = []
+            for i in range(4):
+                round_teams.extend([team_ids[i], team_ids[7-i]])
+            positions['Quarter-Finals'] = round_teams
+        elif num_teams == 4:
+            # Semi-Finals
+            positions['Semi-Finals'] = [team_ids[0], team_ids[3], team_ids[1], team_ids[2]]
+        elif num_teams == 2:
+            # Final
+            positions['Final'] = team_ids
+        else:
+            # For other numbers, pair sequentially
+            positions['First Round'] = team_ids
+        
+        return positions

@@ -61,7 +61,7 @@ class StandingsService:
             Match.query
             .filter(
                 and_(
-                    Match.competition == str(tournament_id),
+                    Match.competition_id == tournament_id,
                     Match.status == MatchStatus.finished
                 )
             )

@@ -1,8 +1,8 @@
 from flask import Blueprint, request, jsonify
-from app.services.tournament_service import TournamentService
+from app.services.competition_service import CompetitionService
 from app.services.invite_service import InviteService
 from app.services.auth_service import get_current_coach
-from app.models.tournament import Tournament
+from app.models import Competition
 from flask import current_app
 
 tournament_bp = Blueprint("tournaments", __name__, url_prefix="/api/tournaments")
@@ -16,7 +16,7 @@ def create_tournament():
     except Exception as e:
         return jsonify({"error": str(e)}), 401
 
-    tournament = TournamentService.create_tournament(data, coach_id=coach_id)
+    tournament = CompetitionService.create_competition(data, coach_id=coach_id)
     return jsonify(tournament.to_dict()), 201
 
 
@@ -28,7 +28,7 @@ def my_tournaments():
     except Exception as e:
         return jsonify({"error": str(e)}), 401
 
-    tournaments = Tournament.query.filter_by(created_by=coach.id).all()
+    tournaments = Competition.query.filter_by(created_by=coach.id).all()
     return jsonify([t.to_dict() for t in tournaments])
 
 
@@ -37,21 +37,21 @@ def my_tournaments():
 def list_tournaments():
     # Public listing used by frontend public page. Support basic filters.
     args = request.args
-    qry = Tournament.query
+    qry = Competition.query
     ttype = args.get('type')
     status = args.get('status')
     if ttype:
-        qry = qry.filter(Tournament.tournament_type == ttype)
+        qry = qry.filter(Competition.format_type == ttype)
     if status:
-        qry = qry.filter(Tournament.status == status)
+        qry = qry.filter(Competition.status == status)
 
-    tournaments = qry.order_by(Tournament.created_at.desc()).all()
+    tournaments = qry.order_by(Competition.created_at.desc()).all()
     return jsonify([t.to_dict() for t in tournaments])
 
 
 @tournament_bp.get("/<uuid:tournament_id>")
 def get_tournament(tournament_id):
-    t = Tournament.query.get_or_404(tournament_id)
+    t = Competition.query.get_or_404(tournament_id)
     return jsonify(t.to_dict())
 
 

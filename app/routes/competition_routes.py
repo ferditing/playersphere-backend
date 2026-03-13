@@ -326,27 +326,51 @@ def generate_fixtures(competition_id):
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
     except Exception as e:
+        import traceback
+        print(f"Exception in generate_fixtures: {str(e)}")
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
-@competition_bp.route('/<competition_id>/fixtures', methods=['GET'])
-@require_auth
-def get_fixtures(competition_id):
-    """Get all fixtures for a competition"""
+@competition_bp.route('/<competition_id>/generate-knockout-fixtures', methods=['POST'])
+@require_admin
+def generate_knockout_fixtures(competition_id):
+    """Generate knockout fixtures for qualified teams"""
     try:
-        group_id = request.args.get('group_id')
-        knockout_round_id = request.args.get('knockout_round_id')
+        competition = Competition.query.get(uuid.UUID(competition_id))
         
-        query_group_id = uuid.UUID(group_id) if group_id else None
-        query_knockout_id = uuid.UUID(knockout_round_id) if knockout_round_id else None
+        if not competition:
+            return jsonify({'error': 'Competition not found'}), 404
         
-        fixtures = SchedulingService.get_schedule(
+        # Get qualified teams from standings (top teams)
+        standings = CompetitionService.get_competition_standings(uuid.UUID(competition_id))
+        qualified_teams = [s['team_id'] for s in standings[:16]]  # Top 16 or adjust
+        
+        if len(qualified_teams) < 2:
+            return jsonify({'error': 'Not enough qualified teams for knockout'}), 400
+        
+        data = request.get_json() or {}
+        start_date = data.get('start_date')
+        
+        matches = SchedulingService.generate_knockout_from_teams(
             uuid.UUID(competition_id),
-            group_id=query_group_id,
-            knockout_round_id=query_knockout_id
+            qualified_teams,
+            start_date=start_date
         )
         
-        return jsonify(fixtures), 200
+        return jsonify({
+            'generated_matches': len(matches),
+            'qualified_teams': len(qualified_teams),
+            'matches': [m.to_dict() for m in matches[:5]]
+        }), 201
+    
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        import traceback
+        print(f"Exception in generate_knockout_fixtures: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500

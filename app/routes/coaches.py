@@ -72,6 +72,28 @@ def list_coaches():
     except Exception as e:
         return jsonify({"error": str(e)}), 401
 
+@bp.delete("/<uuid:coach_id>", strict_slashes=False)
+def delete_coach(coach_id):
+    """Delete a coach. Only admins can do this."""
+    try:
+        user = get_current_user()
+        if not isinstance(user, Admin):
+            return jsonify({"error": "Only admins can delete coaches"}), 403
+
+        coach = Coach.query.get(coach_id)
+        if not coach:
+            return jsonify({"error": "Coach not found"}), 404
+
+        # Prevent deleting coach with existing teams
+        if coach.teams:
+            return jsonify({"error": "Cannot delete coach with assigned teams"}), 400
+
+        db.session.delete(coach)
+        db.session.commit()
+        return jsonify({"message": "Coach deleted successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
+
 @bp.put("/profile")
 def update_profile():
     coach = get_current_coach()

@@ -5,10 +5,85 @@ from app.models.match_event import MatchEvent
 from app.models.enums import EventType
 from datetime import datetime, timedelta
 
+def apply_match_results(match: Match):
+    """Apply finished match results to team and player stats."""
+    from app.models.team_stats import TeamStats
+    from app.models.player_stats import PlayerStats
+
+    # Update team stats
+    home_team_stats = TeamStats.query.filter_by(team_id=match.home_team_id).first()
+    away_team_stats = TeamStats.query.filter_by(team_id=match.away_team_id).first()
+
+    if not home_team_stats:
+        home_team_stats = TeamStats(team_id=match.home_team_id)
+        db.session.add(home_team_stats)
+
+    if not away_team_stats:
+        away_team_stats = TeamStats(team_id=match.away_team_id)
+        db.session.add(away_team_stats)
+
+    # Update match counts
+    home_team_stats.matches_played += 1
+    away_team_stats.matches_played += 1
+
+    # Update goals
+    home_team_stats.goals_for += match.home_score or 0
+    home_team_stats.goals_against += match.away_score or 0
+    away_team_stats.goals_for += match.away_score or 0
+    away_team_stats.goals_against += match.home_score or 0
+
+    # Update wins/draws/losses
+    if match.home_score > match.away_score:
+        home_team_stats.wins += 1
+        away_team_stats.losses += 1
+    elif match.home_score < match.away_score:
+        away_team_stats.wins += 1
+        home_team_stats.losses += 1
+    else:
+        home_team_stats.draws += 1
+        away_team_stats.draws += 1
+
+    # Update clean sheets
+    if (match.away_score or 0) == 0:
+        home_team_stats.clean_sheets += 1
+    if (match.home_score or 0) == 0:
+        away_team_stats.clean_sheets += 1
+
+    # Update player stats based on events (if any)
+    for event in match.events:
+        if event.player_id:
+            player_stats = PlayerStats.query.filter_by(player_id=event.player_id).first()
+            if not player_stats:
+                player_stats = PlayerStats(player_id=event.player_id)
+                db.session.add(player_stats)
+
+            ev_type = event.event_type.value if hasattr(event.event_type, 'value') else str(event.event_type)
+
+            if ev_type in ['goal', 'penalty_goal']:
+                player_stats.goals += 1
+            elif ev_type == 'yellow_card':
+                player_stats.yellow_cards += 1
+            elif ev_type == 'red_card':
+                player_stats.red_cards += 1
+
+    # Increment matches played and minutes played for players who participated (had events)
+    player_ids = {e.player_id for e in match.events if e.player_id}
+    for pid in player_ids:
+        ps = PlayerStats.query.filter_by(player_id=pid).first()
+        if ps:
+            ps.matches_played += 1
+            try:
+                ps.minutes_played += int(match.current_minute or 0)
+            except Exception:
+                ps.minutes_played += 0
+
+
 def schedule_match(data, coach_id):
-    """
-    Creates a new match in scheduled state.
-    """
+    """Create a new match (scheduled or finished)."""
+
+    # Determine status (default scheduled)
+    status = data.get('status') or 'scheduled'
+
     match = Match(
         home_team_id=data["home_team_id"],
         away_team_id=data["away_team_id"],
@@ -19,13 +94,30 @@ def schedule_match(data, coach_id):
         region=data.get("region"),
         city=data.get("city"),
         created_by=coach_id,
-        status=MatchStatus.scheduled,
-        home_score=0,
-        away_score=0,
-        current_minute=0
+        status=MatchStatus(status),
+        home_score=data.get("home_score") or 0,
+        away_score=data.get("away_score") or 0,
+        current_minute=data.get("current_minute") or 0,
+        started_at=data.get("started_at"),
+        ended_at=data.get("ended_at"),
     )
     db.session.add(match)
     db.session.commit()
+
+    # If match is already finished, apply stats immediately
+    if match.status == MatchStatus.finished:
+        # Ensure we have sensible timing fields
+        if not match.started_at:
+            match.started_at = match.match_date
+        if not match.ended_at:
+            from datetime import datetime
+            match.ended_at = datetime.utcnow()
+        if not match.current_minute:
+            match.current_minute = 90
+
+        apply_match_results(match)
+        db.session.commit()
+
     return match
 
 
@@ -163,27 +255,47 @@ def compute_score(match: Match):
 
 
 def create_tournament_matches(tournament_id, matches_data):
-    """
-    Bulk create matches for a tournament.
-    """
+    """Bulk create matches for a tournament."""
     created_matches = []
 
     for data in matches_data:
+        status = data.get('status') or 'scheduled'
+        home_score = data.get('home_score') or 0
+        away_score = data.get('away_score') or 0
+        current_minute = data.get('current_minute') or 0
+
         match = Match(
             competition=str(tournament_id),
             home_team_id=data["home_team_id"],
             away_team_id=data["away_team_id"],
             match_date=data["match_date"],
             venue=data.get("venue"),
-            status=MatchStatus.scheduled,
-            home_score=0,
-            away_score=0,
-            current_minute=0,
+            status=MatchStatus(status),
+            home_score=home_score,
+            away_score=away_score,
+            current_minute=current_minute,
+            started_at=data.get('started_at'),
+            ended_at=data.get('ended_at'),
         )
         db.session.add(match)
         created_matches.append(match)
 
     db.session.commit()
+
+    # Apply stats for finished matches
+    for match in created_matches:
+        if match.status == MatchStatus.finished:
+            if not match.started_at:
+                match.started_at = match.match_date
+            if not match.ended_at:
+                from datetime import datetime
+                match.ended_at = datetime.utcnow()
+            if not match.current_minute:
+                match.current_minute = 90
+            apply_match_results(match)
+
+    db.session.commit()
+
     return [m.to_dict() for m in created_matches]
 
 

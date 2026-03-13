@@ -22,7 +22,7 @@ class PlayerStatsService:
             .join(MatchEvent, MatchEvent.player_id == Player.id)
             .join(Match, Match.id == MatchEvent.match_id)
             .filter(
-                Match.competition == str(tournament_id),
+                Match.competition_id == tournament_id,
                 MatchEvent.event_type.in_([EventType.goal, EventType.penalty_goal])
             )
             .group_by(Player.id)
@@ -58,7 +58,7 @@ class PlayerStatsService:
             )
             .join(MatchEvent, MatchEvent.player_id == Player.id)
             .join(Match, Match.id == MatchEvent.match_id)
-            .filter(Match.competition == str(tournament_id))
+            .filter(Match.competition_id == tournament_id)
             .group_by(Player.id)
             .all()
         )

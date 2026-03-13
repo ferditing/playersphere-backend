@@ -142,11 +142,23 @@ def update_team(team_id):
 
 @bp.delete("/<uuid:team_id>", strict_slashes=False)
 def delete_team(team_id):
+    """Delete a team. Coaches can delete their own teams; admins can delete any."""
     try:
-        coach = get_current_coach()
+        user = get_current_user()
     except Exception as e:
         return jsonify({"error": str(e)}), 401
-    team = Team.query.filter_by(id=team_id, coach_id=coach.id).first()
+
+    # Determine if user is admin or coach
+    team = None
+    from app.models.admin import Admin
+
+    if isinstance(user, Admin):
+        # Admin can delete any team
+        team = Team.query.get(team_id)
+    else:
+        # Coach can only delete their own team
+        coach = get_current_coach()
+        team = Team.query.filter_by(id=team_id, coach_id=coach.id).first()
 
     if not team:
         return jsonify({"error": "Team not found"}), 404

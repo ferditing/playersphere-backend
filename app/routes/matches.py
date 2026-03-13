@@ -115,7 +115,7 @@ def list_tournament_matches(tournament_id):
     qry = Match.query.options(
         joinedload(Match.home_team),
         joinedload(Match.away_team)
-    ).filter(Match.competition == str(tournament_id))
+    ).filter(Match.competition_id == tournament_id)
 
     if status:
         if status == 'upcoming':

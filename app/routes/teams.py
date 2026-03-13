@@ -115,15 +115,25 @@ def get_backup_email_verifications(team_id):
 @bp.put("/<uuid:team_id>", strict_slashes=False)
 def update_team(team_id):
     try:
-        coach = get_current_coach()
+        user = get_current_user()
     except Exception as e:
         return jsonify({"error": str(e)}), 401
-    team = Team.query.filter_by(id=team_id, coach_id=coach.id).first()
+
+    # Determine access: admins can update any team (and reassign coaches), coaches can only update their own teams
+    team = None
+    from app.models.admin import Admin
+
+    if isinstance(user, Admin):
+        team = Team.query.get(team_id)
+    else:
+        coach = get_current_coach()
+        team = Team.query.filter_by(id=team_id, coach_id=coach.id).first()
 
     if not team:
         return jsonify({"error": "Team not found"}), 404
 
     data = request.json
+
     # Update allowed fields
     if "name" in data:
         team.name = data["name"]
@@ -135,6 +145,13 @@ def update_team(team_id):
         team.area = data["area"]
     if "team_type" in data:
         team.team_type = data["team_type"]
+
+    # Admins can reassign the team to a different coach (useful when deleting coaches)
+    if isinstance(user, Admin) and "coach_id" in data:
+        new_coach = Coach.query.get(data.get("coach_id"))
+        if not new_coach:
+            return jsonify({"error": "Coach not found"}), 404
+        team.coach_id = new_coach.id
 
     db.session.commit()
     return jsonify(team.to_dict())
@@ -162,6 +179,13 @@ def delete_team(team_id):
 
     if not team:
         return jsonify({"error": "Team not found"}), 404
+
+    # Prevent deleting teams that are referenced by existing matches.
+    # Matches currently require non-null home_team_id and away_team_id.
+    if getattr(team, 'home_matches', None) or getattr(team, 'away_matches', None):
+        return jsonify({
+            "error": "Cannot delete team while it has scheduled/recorded matches. Reassign or remove those matches first."
+        }), 400
 
     db.session.delete(team)
     db.session.commit()

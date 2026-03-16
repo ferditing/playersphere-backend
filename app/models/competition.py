@@ -68,6 +68,7 @@ class Competition(db.Model):
             'points_draw': self.points_draw,
             'points_loss': self.points_loss,
             'max_teams': self.max_teams,
+            'number_of_teams': len(self.teams),
             'region_id': str(self.region_id) if self.region_id else None,
             'county_id': str(self.county_id) if self.county_id else None,
             'created_by': str(self.created_by) if self.created_by else None,

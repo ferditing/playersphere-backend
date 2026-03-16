@@ -32,6 +32,47 @@ def my_tournaments():
     return jsonify([t.to_dict() for t in tournaments])
 
 
+@tournament_bp.get('/my-team-tournaments')
+def my_team_tournaments():
+    """Get tournaments where the coach's teams are participating"""
+    try:
+        coach = get_current_coach()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
+
+    # Get all tournaments where any of the coach's teams are participating
+    from app.models import CompetitionTeam
+    team_tournaments = Competition.query.join(CompetitionTeam).filter(
+        CompetitionTeam.team_id.in_([team.id for team in coach.teams])
+    ).distinct().all()
+    
+    return jsonify([t.to_dict() for t in team_tournaments])
+
+
+@tournament_bp.get('/<tournament_id>/my-team-matches')
+def my_team_matches_in_tournament(tournament_id):
+    """Get matches for a specific tournament where the coach's teams are playing"""
+    try:
+        coach = get_current_coach()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
+
+    from app.models import Match
+    from sqlalchemy.orm import joinedload
+    
+    # Get matches in this tournament where coach's teams are playing
+    matches = Match.query.options(
+        joinedload(Match.home_team),
+        joinedload(Match.away_team)
+    ).filter(
+        Match.competition_id == tournament_id,
+        (Match.home_team_id.in_([team.id for team in coach.teams]) | 
+         Match.away_team_id.in_([team.id for team in coach.teams]))
+    ).order_by(Match.match_date).all()
+    
+    return jsonify([m.to_dict() for m in matches])
+
+
 
 @tournament_bp.get("")
 def list_tournaments():

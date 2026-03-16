@@ -76,6 +76,7 @@ def create_app():
     from app.routes.match_interests import bp as match_interests_bp
     from app.routes.coaches import bp as coaches_bp
     from app.routes.match_events import bp as match_events_bp
+    from app.routes.match_events import matches_bp as match_events_matches_bp
     from app.routes.tournament_routes import tournament_bp
     from app.routes.matches import match_bp
     from app.routes.standings_routes import standings_bp
@@ -83,6 +84,7 @@ def create_app():
     from app.routes.knockout_routes import knockout_bp
     from app.routes.competition_routes import competition_bp
     from app.routes.admin_routes import bp as admin_bp
+    from app.routes.tickets import bp as tickets_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(teams_bp)
@@ -93,6 +95,7 @@ def create_app():
     app.register_blueprint(match_interests_bp)
     app.register_blueprint(coaches_bp)
     app.register_blueprint(match_events_bp)
+    app.register_blueprint(match_events_matches_bp)
     app.register_blueprint(tournament_bp)
     app.register_blueprint(match_bp)
     app.register_blueprint(standings_bp)
@@ -100,6 +103,7 @@ def create_app():
     app.register_blueprint(knockout_bp)
     app.register_blueprint(competition_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(tickets_bp)
 
     # Register CLI commands
     @app.cli.command()

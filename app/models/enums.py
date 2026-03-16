@@ -3,6 +3,7 @@ import enum
 class MatchStatus(enum.Enum):
     scheduled = "scheduled"
     live = "live"
+    paused = "paused"
     finished = "finished"
     cancelled = "cancelled"
 

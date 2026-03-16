@@ -299,3 +299,96 @@ class CompetitionService:
             })
         
         return result
+
+    # ==========================================
+    # GROUP MANAGEMENT METHODS
+    # ==========================================
+
+    @staticmethod
+    def create_group(competition_id, name, group_order=None):
+        """Create a new group for a competition"""
+        competition = Competition.query.get(competition_id)
+        if not competition:
+            raise ValueError(f"Competition {competition_id} not found")
+        
+        # Check if group name already exists
+        existing = CompetitionGroup.query.filter_by(
+            competition_id=competition_id,
+            name=name
+        ).first()
+        
+        if existing:
+            raise ValueError(f"Group '{name}' already exists in this competition")
+        
+        group = CompetitionGroup(
+            competition_id=competition_id,
+            name=name,
+            group_order=group_order
+        )
+        
+        db.session.add(group)
+        db.session.commit()
+        return group
+
+    @staticmethod
+    def assign_teams_to_group(competition_id, group_id, team_ids):
+        """Assign teams to a specific group"""
+        group = CompetitionGroup.query.get(group_id)
+        if not group or str(group.competition_id) != str(competition_id):
+            raise ValueError("Group not found or doesn't belong to this competition")
+        
+        updated_count = 0
+        for team_id in team_ids:
+            comp_team = CompetitionTeam.query.filter_by(
+                competition_id=competition_id,
+                team_id=team_id
+            ).first()
+            
+            if comp_team:
+                comp_team.group_id = group_id
+                updated_count += 1
+        
+        db.session.commit()
+        return updated_count
+
+    @staticmethod
+    def get_group_standings(competition_id, group_id):
+        """Get standings for a specific group"""
+        competition = Competition.query.get(competition_id)
+        if not competition:
+            raise ValueError(f"Competition {competition_id} not found")
+        
+        # Get teams in this group
+        comp_teams = CompetitionTeam.query.filter_by(
+            competition_id=competition_id,
+            group_id=group_id
+        ).all()
+        
+        if not comp_teams:
+            return []
+        
+        # Get standings for these teams
+        all_standings = CompetitionService.get_competition_standings(competition_id)
+        
+        # Filter for teams in this group
+        group_team_ids = {str(ct.team_id) for ct in comp_teams}
+        group_standings = [s for s in all_standings if s['team_id'] in group_team_ids]
+        
+        return group_standings
+
+    @staticmethod
+    def get_competition_groups(competition_id):
+        """Get all groups for a competition with team counts"""
+        groups = CompetitionGroup.query.filter_by(
+            competition_id=competition_id
+        ).order_by(CompetitionGroup.group_order).all()
+        
+        result = []
+        for group in groups:
+            team_count = CompetitionTeam.query.filter_by(group_id=group.id).count()
+            result.append({
+                **group.to_dict(),
+                'team_count': team_count,
+            })
+        
+        return result

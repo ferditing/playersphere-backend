@@ -9,6 +9,7 @@ from .match_interest import MatchInterest
 from .player_stats import PlayerStats
 from .team_stats import TeamStats
 from .message import Message
+from .ticket import Ticket
 
 # Location Models
 from .country import Country

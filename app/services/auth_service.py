@@ -68,3 +68,25 @@ def get_current_user():
         raise Exception("Token expired")
     except jwt.InvalidTokenError:
         raise Exception("Invalid token")
+
+def get_current_admin():
+    """Get current admin from token - for admin endpoints only"""
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        raise Exception("No auth token")
+    token = auth_header.split(' ')[1]
+    try:
+        payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
+        
+        # If this is a coach token, raise an error
+        if 'coach_id' in payload:
+            raise Exception("Coach tokens cannot access admin endpoints")
+        
+        admin = Admin.query.get(payload['admin_id'])
+        if not admin:
+            raise Exception("Admin not found")
+        return admin
+    except jwt.ExpiredSignatureError:
+        raise Exception("Token expired")
+    except jwt.InvalidTokenError:
+        raise Exception("Invalid token")

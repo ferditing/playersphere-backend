@@ -7,6 +7,7 @@ from app.services.auth_service import get_current_user
 from app.extensions.db import db
 from functools import wraps
 import uuid
+from datetime import datetime
 
 competition_bp = Blueprint('competitions', __name__, url_prefix='/api/competitions')
 
@@ -281,6 +282,35 @@ def get_competition_teams(competition_id):
 # FIXTURES/SCHEDULE ROUTES
 # ============================================================
 
+@competition_bp.route('/<competition_id>/fixtures', methods=['GET'])
+@require_auth
+def get_competition_fixtures(competition_id):
+    """Get all fixtures/matches for a competition"""
+    try:
+        from app.models.match import Match
+        from sqlalchemy.orm import joinedload
+        
+        # Get all matches for this competition
+        matches = Match.query.options(
+            joinedload(Match.home_team),
+            joinedload(Match.away_team)
+        ).filter_by(
+            competition_id=uuid.UUID(competition_id)
+        ).order_by(
+            Match.match_date
+        ).all()
+        
+        # Convert to dict format
+        fixtures = []
+        for match in matches:
+            fixtures.append(match.to_dict())
+        
+        return jsonify(fixtures), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @competition_bp.route('/<competition_id>/generate-fixtures', methods=['POST'])
 @require_admin
 def generate_fixtures(competition_id):
@@ -466,6 +496,183 @@ def apply_advancement_rules(competition_id):
             'total_rules': len(results),
             'results': results
         }), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================
+# GROUP MANAGEMENT ROUTES
+# ============================================================
+
+@competition_bp.route('/<competition_id>/groups', methods=['POST'])
+@require_admin
+def create_group(competition_id):
+    """Create a new group for a competition"""
+    try:
+        data = request.get_json()
+        
+        if 'name' not in data:
+            return jsonify({'error': 'Group name required'}), 400
+        
+        competition = Competition.query.get(uuid.UUID(competition_id))
+        if not competition:
+            return jsonify({'error': 'Competition not found'}), 404
+        
+        # Check if group name already exists for this competition
+        existing = CompetitionGroup.query.filter_by(
+            competition_id=uuid.UUID(competition_id),
+            name=data['name']
+        ).first()
+        
+        if existing:
+            return jsonify({'error': f'Group "{data["name"]}" already exists'}), 400
+        
+        group = CompetitionGroup(
+            competition_id=uuid.UUID(competition_id),
+            name=data['name'],
+            group_order=data.get('group_order')
+        )
+        
+        db.session.add(group)
+        db.session.commit()
+        
+        return jsonify(group.to_dict()), 201
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@competition_bp.route('/<competition_id>/groups', methods=['GET'])
+@require_auth
+def get_competition_groups(competition_id):
+    """Get all groups for a competition"""
+    try:
+        groups = CompetitionGroup.query.filter_by(
+            competition_id=uuid.UUID(competition_id)
+        ).order_by(CompetitionGroup.group_order).all()
+        
+        return jsonify([group.to_dict() for group in groups]), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@competition_bp.route('/<competition_id>/groups/<group_id>/teams', methods=['POST'])
+@require_admin
+def assign_teams_to_group(competition_id, group_id):
+    """Assign teams to a group"""
+    try:
+        data = request.get_json()
+        
+        if 'team_ids' not in data or not isinstance(data['team_ids'], list):
+            return jsonify({'error': 'team_ids array required'}), 400
+        
+        group = CompetitionGroup.query.get(uuid.UUID(group_id))
+        if not group:
+            return jsonify({'error': 'Group not found'}), 404
+        
+        if str(group.competition_id) != competition_id:
+            return jsonify({'error': 'Group does not belong to this competition'}), 400
+        
+        team_ids = [uuid.UUID(tid) if isinstance(tid, str) else tid for tid in data['team_ids']]
+        
+        # Update team assignments
+        updated_count = 0
+        for team_id in team_ids:
+            comp_team = CompetitionTeam.query.filter_by(
+                competition_id=uuid.UUID(competition_id),
+                team_id=team_id
+            ).first()
+            
+            if comp_team:
+                comp_team.group_id = uuid.UUID(group_id)
+                updated_count += 1
+        
+        db.session.commit()
+        
+        return jsonify({
+            'updated_teams': updated_count,
+            'group_id': group_id
+        }), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@competition_bp.route('/<competition_id>/groups/<group_id>/fixtures', methods=['POST'])
+@require_admin
+def create_group_fixture(competition_id, group_id):
+    """Create a manual fixture within a group"""
+    try:
+        data = request.get_json()
+        
+        required = ['home_team_id', 'away_team_id', 'match_date']
+        if not all(k in data for k in required):
+            return jsonify({'error': 'home_team_id, away_team_id, and match_date required'}), 400
+        
+        group = CompetitionGroup.query.get(uuid.UUID(group_id))
+        if not group:
+            return jsonify({'error': 'Group not found'}), 404
+        
+        if str(group.competition_id) != competition_id:
+            return jsonify({'error': 'Group does not belong to this competition'}), 400
+        
+        # Verify teams are in the group
+        home_team = CompetitionTeam.query.filter_by(
+            competition_id=uuid.UUID(competition_id),
+            team_id=uuid.UUID(data['home_team_id']),
+            group_id=uuid.UUID(group_id)
+        ).first()
+        
+        away_team = CompetitionTeam.query.filter_by(
+            competition_id=uuid.UUID(competition_id),
+            team_id=uuid.UUID(data['away_team_id']),
+            group_id=uuid.UUID(group_id)
+        ).first()
+        
+        if not home_team or not away_team:
+            return jsonify({'error': 'Both teams must be in the specified group'}), 400
+        
+        from app.models.match import Match
+        from app.models.enums import MatchStatus
+        
+        match = Match(
+            home_team_id=uuid.UUID(data['home_team_id']),
+            away_team_id=uuid.UUID(data['away_team_id']),
+            competition_id=uuid.UUID(competition_id),
+            group_id=uuid.UUID(group_id),
+            match_date=datetime.fromisoformat(data['match_date'].replace('Z', '+00:00')),
+            status=MatchStatus.scheduled,
+            country='Kenya'
+        )
+        
+        db.session.add(match)
+        db.session.commit()
+        
+        return jsonify(match.to_dict()), 201
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@competition_bp.route('/<competition_id>/groups/<group_id>/fixtures', methods=['GET'])
+@require_auth
+def get_group_fixtures(competition_id, group_id):
+    """Get all fixtures for a specific group"""
+    try:
+        from app.models.match import Match
+        from sqlalchemy.orm import joinedload
+        
+        matches = Match.query.options(
+            joinedload(Match.home_team),
+            joinedload(Match.away_team)
+        ).filter_by(
+            competition_id=uuid.UUID(competition_id),
+            group_id=uuid.UUID(group_id)
+        ).order_by(Match.match_date).all()
+        
+        return jsonify([match.to_dict() for match in matches]), 200
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500

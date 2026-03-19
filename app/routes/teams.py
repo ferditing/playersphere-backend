@@ -14,6 +14,14 @@ def create_team():
     try:
         user = get_current_user()
         data = request.get_json() or {}
+        
+        print(f"\n=== TEAM CREATION DEBUG ===")
+        print(f"User type: {type(user).__name__}")
+        print(f"User ID: {user.id if hasattr(user, 'id') else 'N/A'}")
+        print(f"Request data: {data}")
+        print(f"County ID from request: {data.get('county_id')}")
+        print(f"Region from request: {data.get('region')}")
+        print(f"Area from request: {data.get('area')}")
 
         if "name" not in data:
             return jsonify({"error": "Team name is required"}), 400
@@ -45,10 +53,24 @@ def create_team():
             team_type=data.get("team_type"),
             backup_email_1=data.get("backup_email_1"),
             backup_email_2=data.get("backup_email_2"),
+            county_id=data.get("county_id"),
+            created_by_admin_id=user.id if isinstance(user, Admin) else None,
         )
+        
+        print(f"Team object before commit:")
+        print(f"  - Name: {team.name}")
+        print(f"  - County ID: {team.county_id}")
+        print(f"  - Region: {team.region}")
+        print(f"  - Area: {team.area}")
+        print(f"  - Coach ID: {team.coach_id}")
+        print(f"  - Created by admin: {team.created_by_admin_id}")
 
         db.session.add(team)
         db.session.commit()
+        
+        print(f"Team saved with ID: {team.id}")
+        print(f"Team county_id after commit: {team.county_id}")
+        print(f"=== END TEAM CREATION DEBUG ===\n")
 
         return jsonify(team.to_dict()), 201
     except Exception as e:
@@ -60,17 +82,34 @@ def my_teams():
     try:
         # Check if it's an admin token
         user = get_current_user()
+        
+        print(f"\n=== MY_TEAMS DEBUG ===")
+        print(f"User type: {type(user).__name__}")
+        print(f"User ID: {user.id if hasattr(user, 'id') else 'N/A'}")
+        
         if isinstance(user, Admin):
+            print(f"User is Admin")
+            print(f"Admin role: {user.role}")
+            print(f"Admin county_id: {user.county_id if hasattr(user, 'county_id') else 'N/A'}")
             # Admins can see all teams (or filter by county if county_admin)
             if user.role == 'county_admin' and user.county_id:
+                print(f"Filtering by county_admin county_id: {user.county_id}")
                 teams = Team.query.filter_by(county_id=user.county_id).all()
             else:
                 # Super admin sees all teams
+                print(f"Super admin - fetching ALL teams")
                 teams = Team.query.all()
         else:
+            print(f"User is Coach")
             # Coaches only see their own teams
             coach = get_current_coach()
+            print(f"Coach ID: {coach.id}")
             teams = Team.query.filter_by(coach_id=coach.id).all()
+        
+        print(f"Found {len(teams)} teams")
+        for team in teams:
+            print(f"  - Team: {team.name} (ID: {team.id}, County: {team.county_id}, Region: {team.region})")
+        print(f"=== END MY_TEAMS DEBUG ===\n")
         
         return jsonify([t.to_dict() for t in teams]), 200
     except Exception as e:

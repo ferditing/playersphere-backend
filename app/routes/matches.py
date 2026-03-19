@@ -18,35 +18,55 @@ match_bp = Blueprint(
 
 @bp.put("/<uuid:match_id>", strict_slashes=False)
 def update_match_details(match_id):
+    """Update match details (scores, status, venue)"""
     try:
         # Allow both coaches and admins to update matches
         user = get_current_user()
+        
+        print(f"DEBUG: update_match_details - User type: {type(user).__name__}, User ID: {user.id if hasattr(user, 'id') else 'N/A'}")
+        
         if isinstance(user, Admin):
             # Admin can update any match
+            print(f"DEBUG: Admin user allowed to update match")
             pass
         else:
             # Coach can only update matches they own
+            print(f"DEBUG: Coach user - checking ownership")
             match = Match.query.get_or_404(match_id)
             if str(match.home_team.coach_id) != str(user.id) and str(match.away_team.coach_id) != str(user.id):
+                print(f"DEBUG: Coach {user.id} not authorized for match {match_id}")
                 return jsonify({"error": "You don't have permission to update this match"}), 403
     except Exception as e:
-        return jsonify({"error": str(e)}), 401
+        print(f"DEBUG: Auth error in update_match_details: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Authentication failed: {str(e)}"}), 401
 
-    match = Match.query.get_or_404(match_id)
-    data = request.json
+    try:
+        match = Match.query.get_or_404(match_id)
+        data = request.json or {}
 
-    # Update allowed fields
-    if 'home_score' in data:
-        match.home_score = data['home_score']
-    if 'away_score' in data:
-        match.away_score = data['away_score']
-    if 'status' in data:
-        match.status = MatchStatus(data['status'])
-    if 'venue' in data:
-        match.venue = data['venue']
+        print(f"DEBUG: Updating match {match_id} with data: {data}")
 
-    db.session.commit()
-    return jsonify(match.to_dict()), 200
+        # Update allowed fields
+        if 'home_score' in data:
+            match.home_score = data['home_score']
+        if 'away_score' in data:
+            match.away_score = data['away_score']
+        if 'status' in data:
+            match.status = MatchStatus(data['status'])
+        if 'venue' in data:
+            match.venue = data['venue']
+
+        db.session.commit()
+        print(f"DEBUG: Match {match_id} updated successfully")
+        return jsonify(match.to_dict()), 200
+    except Exception as e:
+        db.session.rollback()
+        print(f"DEBUG: Error updating match: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 @bp.delete("/<uuid:match_id>", strict_slashes=False)

@@ -65,11 +65,41 @@ def feeds():
 @bp.get("/teams")
 def public_teams():
     q = request.args.get('q')
+    county_id = request.args.get('county_id')
+    
+    print(f"\n=== PUBLIC_TEAMS DEBUG ===")
+    print(f"Query parameters - county_id: {county_id}, search: {q}")
+    
+    # First, let's see total teams in database
+    all_teams_count = Team.query.count()
+    print(f"Total teams in database: {all_teams_count}")
+    
+    # Log all teams with their county_id
+    all_teams = Team.query.all()
+    print(f"All teams in DB:")
+    for t in all_teams:
+        print(f"  - {t.name} (ID: {t.id}, County: {t.county_id}, Region: {t.region})")
+    
+    query = Team.query
+    
+    if county_id:
+        print(f"Filtering by county_id: {county_id}")
+        # Filter by county_id
+        query = query.filter(Team.county_id == county_id)
+        county_filtered = query.all()
+        print(f"Teams matching county_id {county_id}: {len(county_filtered)}")
+        for t in county_filtered:
+            print(f"  - {t.name} (County: {t.county_id})")
+    
     if q:
+        print(f"Filtering by search query: {q}")
         # case-insensitive name search
-        teams = Team.query.filter(Team.name.ilike(f"%{q}%")).limit(20).all()
-    else:
-        teams = Team.query.all()
+        query = query.filter(Team.name.ilike(f"%{q}%"))
+    
+    teams = query.limit(200).all() if county_id else query.all()
+    print(f"Final result count: {len(teams)} teams")
+    print(f"=== END PUBLIC_TEAMS DEBUG ===\n")
+    
     return jsonify([t.to_dict() for t in teams])
 
 

@@ -94,8 +94,8 @@ class SchedulingService:
         db.session.flush()  # Get the ID
         
         # Pair teams in this round
-        pairings = [(remaining_teams[i], remaining_teams[i+1]) 
-                   for i in range(0, len(remaining_teams) - 1, 2)]
+        pairings = [(team_ids[i], team_ids[i+1]) 
+                   for i in range(0, len(team_ids) - 1, 2)]
         
         for home_id, away_id in pairings:
             match = Match(
@@ -214,16 +214,14 @@ class SchedulingService:
         """Determine knockout round names based on number of teams"""
         rounds = []
         
-        # Check if we need preliminary rounds
+        # Find the power of 2 that's >= num_teams
         power_of_2 = 1
         while power_of_2 < num_teams:
             power_of_2 *= 2
         
-        # If not a power of 2, we need preliminary rounds
+        # If not a power of 2, we need preliminary rounds to get to power of 2
         if power_of_2 > num_teams:
-            need_preliminary = power_of_2 // 2
-            byes = power_of_2 - num_teams
-            
+            # Add preliminary rounds
             if num_teams > 128:
                 rounds.append("Qualifying Round 1")
                 rounds.append("Qualifying Round 2")
@@ -234,21 +232,29 @@ class SchedulingService:
             elif num_teams > 16:
                 rounds.append("Round of 32")
         
-        # Standard knockout rounds (working backwards from power of 2)
-        if power_of_2 >= 2:
-            rounds.append("Round of 2" if power_of_2 == 2 else f"Round of {power_of_2}")
+        # Now add the standard tournament rounds from power_of_2 down to 2
+        current_round = power_of_2
+        while current_round >= 2:
+            if current_round == 256:
+                rounds.append("Round of 256")
+            elif current_round == 128:
+                rounds.append("Round of 128")
+            elif current_round == 64:
+                rounds.append("Round of 64")
+            elif current_round == 32:
+                rounds.append("Round of 32")
+            elif current_round == 16:
+                rounds.append("Round of 16")
+            elif current_round == 8:
+                rounds.append("Quarter-Finals")
+            elif current_round == 4:
+                rounds.append("Semi-Finals")
+            elif current_round == 2:
+                rounds.append("Final")
+            
+            current_round //= 2
         
-        if power_of_2 >= 4:
-            rounds.append("Quarter-Finals")
-        
-        if power_of_2 >= 8:
-            rounds.append("Semi-Finals")
-        
-        if power_of_2 >= 16:
-            rounds.append("Final")
-        
-        # Reverse to get chronological order
-        return list(reversed(rounds))
+        return rounds
 
     @staticmethod
     def reschedule_matches(competition_id, start_date, days_between_matches=7):
@@ -378,3 +384,153 @@ class SchedulingService:
             positions['First Round'] = team_ids
         
         return positions
+
+    @staticmethod
+    def generate_next_knockout_round(competition_id, current_round_order):
+        """
+        Auto-generate the next knockout round based on winners of current round.
+        This is called after all matches in a round are completed.
+        """
+        competition = Competition.query.get(competition_id)
+        if not competition:
+            raise ValueError(f"Competition {competition_id} not found")
+        
+        # Get current round
+        current_round = KnockoutRound.query.filter_by(
+            competition_id=competition_id,
+            round_order=current_round_order
+        ).first()
+        
+        if not current_round:
+            raise ValueError(f"Round {current_round_order} not found")
+        
+        # Check if all matches in current round are completed
+        incomplete_matches = Match.query.filter_by(
+            knockout_round_id=current_round.id
+        ).filter(Match.status != MatchStatus.finished).count()
+        
+        if incomplete_matches > 0:
+            raise ValueError("Cannot generate next round - all matches in current round must be completed")
+        
+        # Get all matches and determine winners
+        matches = Match.query.filter_by(knockout_round_id=current_round.id).all()
+        winners = []
+        
+        for match in matches:
+            if match.home_score > match.away_score:
+                winners.append(match.home_team_id)
+            elif match.away_score > match.home_score:
+                winners.append(match.away_team_id)
+            else:
+                # Handle draws - could use extra time, penalties, etc.
+                # For now, use home team as winner (admin can override)
+                winners.append(match.home_team_id)
+        
+        # If only one winner, tournament is complete
+        if len(winners) <= 1:
+            return None
+        
+        # Create next round
+        next_round_order = current_round_order + 1
+        
+        # Determine next round name
+        if len(winners) == 2:
+            next_round_name = "Final"
+        elif len(winners) == 4:
+            next_round_name = "Semi-Finals"
+        elif len(winners) == 8:
+            next_round_name = "Quarter-Finals"
+        else:
+            next_round_name = f"Round of {len(winners)}"
+        
+        next_round = KnockoutRound(
+            competition_id=competition_id,
+            round_name=next_round_name,
+            round_order=next_round_order,
+            matches_per_pairing=competition.legs,
+            status='pending'
+        )
+        db.session.add(next_round)
+        db.session.flush()
+        
+        # Generate matches for next round
+        matches_list = []
+        match_date = datetime.utcnow() + timedelta(days=14)  # Default 2 weeks after current round
+        
+        for i in range(0, len(winners) - 1, 2):
+            match = Match(
+                home_team_id=winners[i],
+                away_team_id=winners[i+1],
+                competition_id=competition_id,
+                knockout_round_id=next_round.id,
+                match_date=match_date,
+                status=MatchStatus.scheduled,
+                country='Kenya'
+            )
+            db.session.add(match)
+            matches_list.append(match)
+            match_date += timedelta(days=7)
+        
+        db.session.commit()
+        return matches_list
+
+    @staticmethod
+    def get_knockout_bracket(competition_id):
+        """
+        Get the complete knockout bracket structure with all rounds and matches.
+        Used for visualization.
+        """
+        competition = Competition.query.get(competition_id)
+        if not competition:
+            raise ValueError(f"Competition {competition_id} not found")
+        
+        # Get all knockout rounds
+        rounds = KnockoutRound.query.filter_by(competition_id=competition_id).order_by(
+            KnockoutRound.round_order
+        ).all()
+        
+        if not rounds:
+            return {}
+        
+        bracket = {
+            'competition_id': str(competition_id),
+            'competition_name': competition.name,
+            'rounds': []
+        }
+        
+        for round_obj in rounds:
+            matches = Match.query.filter_by(knockout_round_id=round_obj.id).order_by(
+                Match.match_date
+            ).all()
+            
+            round_data = {
+                'round_id': str(round_obj.id),
+                'round_order': round_obj.round_order,
+                'round_name': round_obj.round_name,
+                'status': round_obj.status,
+                'matches': []
+            }
+            
+            for match in matches:
+                from app.models.team import Team
+                home_team = Team.query.get(match.home_team_id)
+                away_team = Team.query.get(match.away_team_id)
+                
+                match_data = {
+                    'match_id': str(match.id),
+                    'home_team_id': str(match.home_team_id),
+                    'home_team_name': home_team.name if home_team else 'TBD',
+                    'away_team_id': str(match.away_team_id),
+                    'away_team_name': away_team.name if away_team else 'TBD',
+                    'home_score': match.home_score,
+                    'away_score': match.away_score,
+                    'status': match.status.value if match.status else 'scheduled',
+                    'match_date': match.match_date.isoformat() if match.match_date else None,
+                    'winner_id': str(match.home_team_id) if match.home_score and match.away_score and match.home_score > match.away_score 
+                                  else (str(match.away_team_id) if match.away_score and match.home_score and match.away_score > match.home_score else None)
+                }
+                round_data['matches'].append(match_data)
+            
+            bracket['rounds'].append(round_data)
+        
+        return bracket

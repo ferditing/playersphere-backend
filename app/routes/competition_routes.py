@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from app.models import Competition, CompetitionTeam, Team
+from app.models import Competition, CompetitionTeam, Team, KnockoutRound, Match, CompetitionGroup
 from app.services.competition_service import CompetitionService
 from app.services.scheduling_service import SchedulingService
 from app.services.advancement_service import AdvancementService
@@ -7,7 +7,7 @@ from app.services.auth_service import get_current_user
 from app.extensions.db import db
 from functools import wraps
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 competition_bp = Blueprint('competitions', __name__, url_prefix='/api/competitions')
 
@@ -185,6 +185,41 @@ def update_competition(competition_id):
         return jsonify({'error': str(e)}), 500
 
 
+@competition_bp.route('/<competition_id>', methods=['DELETE'])
+@require_admin
+def delete_competition(competition_id):
+    """Delete a competition and all associated data"""
+    try:
+        competition = Competition.query.get(uuid.UUID(competition_id))
+        
+        if not competition:
+            return jsonify({'error': 'Competition not found'}), 404
+        
+        # Delete all matches associated with this competition
+        from app.models.match import Match
+        from app.models.match_event import MatchEvent
+        
+        matches = Match.query.filter_by(competition_id=uuid.UUID(competition_id)).all()
+        for match in matches:
+            MatchEvent.query.filter_by(match_id=match.id).delete()
+            db.session.delete(match)
+        
+        # The cascade delete in the model will handle:
+        # - competition_teams
+        # - groups
+        # - knockout_rounds
+        # - advancement_rules
+        
+        db.session.delete(competition)
+        db.session.commit()
+        
+        return jsonify({'message': f'Competition "{competition.name}" deleted successfully'}), 200
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
 # ============================================================
 # TEAM MANAGEMENT ROUTES
 # ============================================================
@@ -306,6 +341,31 @@ def get_competition_fixtures(competition_id):
             fixtures.append(match.to_dict())
         
         return jsonify(fixtures), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@competition_bp.route('/<competition_id>/matches', methods=['GET'])
+@require_auth
+def get_competition_matches(competition_id):
+    """Get all matches for a competition (alias for fixtures)"""
+    try:
+        from app.models.match import Match
+        from sqlalchemy.orm import joinedload
+        
+        # Get all matches for this competition, ordered by date
+        matches = Match.query.options(
+            joinedload(Match.home_team),
+            joinedload(Match.away_team)
+        ).filter_by(
+            competition_id=uuid.UUID(competition_id)
+        ).order_by(
+            Match.match_date
+        ).all()
+        
+        # Convert to dict format
+        return jsonify([m.to_dict() for m in matches]), 200
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -694,4 +754,92 @@ def get_advancement_summary(from_id):
         return jsonify(summary), 200
     
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================
+# KNOCKOUT BRACKET ROUTES
+# ============================================================
+
+@competition_bp.route('/<competition_id>/knockout-bracket', methods=['GET'])
+@require_auth
+def get_knockout_bracket(competition_id):
+    """Get the complete knockout bracket structure for visualization"""
+    try:
+        bracket = SchedulingService.get_knockout_bracket(uuid.UUID(competition_id))
+        return jsonify(bracket), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@competition_bp.route('/<competition_id>/knockout-rounds/<int:round_order>/next', methods=['POST'])
+@require_admin
+def generate_next_knockout_round(competition_id, round_order):
+    """
+    Auto-generate the next knockout round based on winners of the current round.
+    Call this after all matches in a round are completed.
+    """
+    try:
+        matches = SchedulingService.generate_next_knockout_round(
+            uuid.UUID(competition_id),
+            round_order
+        )
+        
+        if matches is None:
+            return jsonify({'message': 'Tournament is complete'}), 200
+        
+        return jsonify({
+            'generated_matches': len(matches),
+            'matches': [m.to_dict() for m in matches]
+        }), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}),500
+
+
+@competition_bp.route('/<competition_id>/knockout-rounds/<round_id>/match-dates', methods=['PATCH'])
+@require_admin
+def update_knockout_round_dates(competition_id, round_id):
+    """Update match dates for all matches in a knockout round"""
+    try:
+        data = request.get_json()
+        
+        start_date = data.get('start_date')
+        days_between = data.get('days_between_matches', 7)
+        
+        if not start_date:
+            return jsonify({'error': 'start_date is required'}), 400
+        
+        # Parse the date
+        from datetime import datetime
+        start_datetime = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+        
+        # Get all matches in this round
+        ko_round = KnockoutRound.query.get(uuid.UUID(round_id))
+        if not ko_round:
+            return jsonify({'error': 'Round not found'}), 404
+        
+        if str(ko_round.competition_id) != competition_id:
+            return jsonify({'error': 'Round does not belong to this competition'}), 400
+        
+        matches = Match.query.filter_by(knockout_round_id=uuid.UUID(round_id)).order_by(
+            Match.match_date
+        ).all()
+        
+        if not matches:
+            return jsonify({'error': 'No matches found in this round'}), 404
+        
+        # Update match dates
+        current_date = start_datetime
+        for match in matches:
+            match.match_date = current_date
+            current_date += timedelta(days=days_between)
+        
+        db.session.commit()
+        
+        return jsonify({
+            'updated_count': len(matches),
+            'matches': [m.to_dict() for m in matches]
+        }), 200
+    except Exception as e:
+        db.session.rollback()
         return jsonify({'error': str(e)}), 500
